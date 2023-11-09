@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import pathlib
+import random
 import subprocess
 import time
 from typing import List
@@ -82,8 +83,7 @@ async def video_pipeline(vid_url):
         duration = snippet["end"] - snippet["start"]
         logging.info(f"{snippet['start']} - {snippet['end']} ({duration}s)")
 
-    import random
-
+    # Select 10 snippets
     if len(top_snippets) > 10:
         logging.info(
             f"More than 10 snippets found: {len(top_snippets)}. Selecting 10 as per instructions."
@@ -93,8 +93,16 @@ async def video_pipeline(vid_url):
         random_snippets = random.sample(top_snippets[1:-2], 7)
         top_snippets = [first_snippet] + random_snippets + last_two_snippets
     top_snippets = sorted(top_snippets, key=lambda x: x["start"])
+
+    # Save the top snippets to a file
+    output_dir = f"{config.OUTPUT_DIR}/{video_id}"
+    ensure_dir(output_dir)
+    with open(os.path.join(output_dir, "original_top_snippets.json"), "w") as file:
+        json.dump(top_snippets, file)
+
+    # Create the highlight video
     vid_name, txt_name = create_highlight_video.remote(
-        top_snippets, video_path, config.OUTPUT_DIR
+        top_snippets, video_path, output_dir
     )
     logging.info(f"Video path: {vid_name}")
     logging.info(f"GPT4-Vision text output: {txt_name}")
