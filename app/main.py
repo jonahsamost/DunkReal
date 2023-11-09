@@ -27,7 +27,7 @@ def main():
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
 def video_pipeline(vid_url):
-    
+    import random
     (video_id, file_path) = url_fetch.remote(vid_url)
     
     start_transcript_time = time.time()
@@ -47,7 +47,7 @@ def video_pipeline(vid_url):
     # put that in the [video_id]_transcript.json
     else: 
         audio_file_paths = process_video.remote(video_id, file_path)
-        transcript = process_transcription(audio_file_paths)
+        transcript = process_transcription.remote(audio_file_paths)
         logging.info("Transcription process completed")
         try:
             with open(transcriptFileName, 'w') as file:
@@ -61,6 +61,11 @@ def video_pipeline(vid_url):
     logging.info(
         f"Time taken for turning audio files into transcripts: {end_transcript_time - start_transcript_time} seconds"
     )
+
+    # RANKING
+    top_snippets = rank_snippets.remote(transcript, 10)
+    logging.info(f"Top snippets: {top_snippets['highlights']}")
+
 
 
 ffmpeg_image = (
@@ -103,7 +108,7 @@ def process_video(video_id: str, video_path: str):
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
 async def audio_file_to_transcript(audio_file_path: str):
-    from . import rank
+    from . import rank 
     import os
     start_transcript_time = time.time()
     transcriptFileName = f'{audio_file_path.replace(".mp3", "").rsplit("/", 1)[0]}/transcript/{audio_file_path.replace(".mp3", "").rsplit("/", 1)[1]}.json'
@@ -133,7 +138,18 @@ def process_transcription(audio_file_paths: List[str]):
     # res = await asyncio.gather(*(audio_file_to_transcript.remote(audio_file_path) for audio_file_path in audio_file_paths))
     return [segment for chunk in results for segment in chunk]
 
-
+@stub.function(
+    secret=modal.Secret.from_name("openai"),
+    image=Image.debian_slim().pip_install("openai"),
+)
+def rank_snippets(transcript, top_n):
+    from . import rank
+    logging.info("Starting to rank snippets")
+    start_rank_time = time.time()
+    top_snippets = rank.rank_segment(transcript[:20], top_n)
+    end_rank_time = time.time()
+    logging.info(f"Time taken for ranking segments: {end_rank_time - start_rank_time} seconds")
+    return json.loads(top_snippets)
 
 async def video_to_audio(video_path, audio_folder, chunk_size=600):
     logging.info("Running ffmpeg command to extract audio")
