@@ -146,7 +146,7 @@ def rank_snippets(transcript, top_n):
     from . import rank
     logging.info("Starting to rank snippets")
     start_rank_time = time.time()
-    top_snippets = rank.rank_segment(transcript[:20], top_n)
+    top_snippets = rank.rank_segment(transcript, top_n)
     end_rank_time = time.time()
     logging.info(f"Time taken for ranking segments: {end_rank_time - start_rank_time} seconds")
     return json.loads(top_snippets)

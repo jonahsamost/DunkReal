@@ -58,7 +58,7 @@ def clean_segments(segments, offset):
 def rank_segment(transcript, top_n: int):
     transcript_str = json.dumps(transcript)
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo-1106",
+        model="gpt-4-1106-preview",
         messages=[
             {
                 "role": "system",
