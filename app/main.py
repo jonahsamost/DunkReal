@@ -2,6 +2,7 @@ import asyncio
 import logging
 import pathlib
 import subprocess
+import time
 
 import modal
 from modal import Image, Stub
@@ -32,25 +33,23 @@ def process_video(video_id: str, video_path: str):
         logging.error(f"Video path {video_path} does not exist. Exiting.")
         return
 
-    ensure_dir(config.RAW_AUDIO_DIR)
-    raw_audio_dir = f"{config.RAW_AUDIO_DIR}/{video_id}"
-    ensure_dir(raw_audio_dir)
-
-    # asyncio.run(video_to_audio(video_path, raw_audio_dir))
-
     audio_folder = f"{config.CHUNKED_AUDIO_DIR}/{video_id}"
     ensure_dir(audio_folder)
 
-    # file_paths = asyncio.run(
-    #     chunk_audio_files(raw_audio_path, audio_video_folder, config.AUDIO_CHUNK_SIZE)
-    # )
-
     logging.info("Processing video and generating transcript")
 
+    start_time = time.time()
     file_paths = asyncio.run(video_to_audio(video_path, audio_folder), debug=True)
+    end_time = time.time()
+    logging.info(f"Time taken for video_to_audio: {end_time - start_time} seconds")
 
     logging.info(f"Chunked all the audio files: {file_paths}")
+    start_transcript_time = time.time()
     audio_file_to_transcript.remote(file_paths[0])
+    end_transcript_time = time.time()
+    logging.info(
+        f"Time taken for audio_file_to_transcript: {end_transcript_time - start_transcript_time} seconds"
+    )
 
 
 @stub.function(secret=modal.Secret.from_name("openai"))
