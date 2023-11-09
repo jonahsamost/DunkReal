@@ -281,14 +281,20 @@ def copyFinalVideoAndText(
 
 
 def runVision(input_data, input_path, output_dir):
+    import os
+    import shutil
+
     video_ext = get_ext_from_path(input_path)
     snippet_data = sortedDataByStart(input_data)
     snippets = []
+    temp_snippet_dir = os.path.join(output_dir, "temp_snippets")
+    os.makedirs(temp_snippet_dir, exist_ok=True)
     for f in snippet_data:
         tempdir = tempfile.TemporaryDirectory()
         success, snippet_path = createVideoSnippet(
             f["start"], f["end"], input_path, tempdir.name, ext=video_ext
         )
+        shutil.copy(snippet_path, temp_snippet_dir)
         if not success:
             print("createVideoSnippet returned False!!!! FUCKKKKKK")
             raise ValueError("FUCKKKK")
@@ -304,7 +310,7 @@ def runVision(input_data, input_path, output_dir):
         results = pool.map(snippetsToPngsFn, snippets)
 
     results = asyncio.run(snippetsToGPTFn(snippets))
-    for (sucess, text), snip in zip(results, snippets):
+    for (success, text), snip in zip(results, snippets):
         if success:
             snip.gptv_text = text
 
