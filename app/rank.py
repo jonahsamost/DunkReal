@@ -60,12 +60,13 @@ def clean_segments(segments, offset):
     current_transcript = None
 
     for transcript in segments:
+        transcript = {'start': transcript['start'], 'end': transcript['end'], 'text': transcript['text']}
+
         if current_transcript is None:
             current_transcript = transcript
         else:
             current_transcript['end'] = transcript['end']
             current_transcript['text'] += ' ' + transcript['text']
-            current_transcript['tokens'] += transcript['tokens']
             # other properties like 'avg_logprob' could be averaged or recalculated in some way if needed
 
             # If the duration of the current segment is at least 10 seconds, add to merged and reset

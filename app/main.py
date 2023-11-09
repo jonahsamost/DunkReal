@@ -3,9 +3,11 @@ import logging
 import pathlib
 import subprocess
 import time
+import json
 
 import modal
 from modal import Image, Stub
+from typing import List
 
 from . import config
 
@@ -21,12 +23,20 @@ def main():
     video_pipeline.remote(vid_url)
 
 
-@stub.function()
+@stub.function(
+    network_file_systems={config.CACHE_DIR: cache_volume},
+)
 def video_pipeline(vid_url):
+    
     (video_id, file_path) = url_fetch.remote(vid_url)
     audio_file_paths = process_video.remote(video_id, file_path)
     start_transcript_time = time.time()
-    audio_file_to_transcript.remote(audio_file_paths[0])
+    # get the whole transcript corpus
+    transcript = asyncio.run(process_transcription(audio_file_paths))
+    # with open(f'{config.CACHE_DIR}/full_transcript.json', 'w') as file:
+    #     json.dump(transcript, file)
+    # audio_file_to_transcript.remote(audio_file_paths[0])
+    logging.info(f"Transcript: {transcript}")
     end_transcript_time = time.time()
     logging.info(
         f"Time taken for turning audio files into transcripts: {end_transcript_time - start_transcript_time} seconds"
@@ -72,15 +82,39 @@ def process_video(video_id: str, video_path: str):
     image=Image.debian_slim().pip_install("openai"),
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
-def audio_file_to_transcript(audio_file_path: str):
+async def audio_file_to_transcript(audio_file_path: str):
     from . import rank
     import os
+    # fileName = audio_file_path.replace(".mp3", "-transcipt.json")
+    # if (pathlib.Path(fileName)):
+    #     with open(f'{audio_file_path.replace(".mp3", "-transcipt.json")}', 'r') as file:
+    #         data = json.load(file)
+    #     return data
     logging.info(f"Starting audio_file_to_transcript for {audio_file_path}")
     offset = int(os.path.basename(audio_file_path).split('_')[0])
     segments = rank.get_transcription(audio_file_path)
+    logging.info(f"Type of segments: {type(segments)}")
     clean_segments = rank.clean_segments(segments, offset)
+    logging.info(f"Type of clean_segments: {type(clean_segments)}")
+    logging.info(f"Type of clean_segments: {type(clean_segments)}")
     logging.info(f"Transcription process completed: {clean_segments}")
+    # try:
+    #     with open(fileName, 'w') as file:
+    #         file.write(json.dumps(clean_segments))
+    # except TypeError as e:
+    #     logging.error(f"Error while writing to JSON file: {e}")
+    return clean_segments
     
+async def process_transcription(audio_file_paths: List[str]):
+    logging.info("Starting process_transcription function")
+    tasks = []
+    for audio_file_path in audio_file_paths:
+        task = asyncio.create_task(audio_file_to_transcript.remote(audio_file_path))
+        tasks.append(task)
+    transcripts = await asyncio.gather(*tasks)
+    logging.info("Transcription process completed")
+    return transcripts
+
 
 
 async def video_to_audio(video_path, audio_folder, chunk_size=600):
