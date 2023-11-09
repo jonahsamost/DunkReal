@@ -50,6 +50,12 @@ def process_video(video_id: str, video_path: str):
     file_paths = asyncio.run(video_to_audio(video_path, audio_folder), debug=True)
 
     logging.info(f"Chunked all the audio files: {file_paths}")
+    audio_file_to_transcript.remote(file_paths[0])
+
+
+@stub.function(secret=modal.Secret.from_name("openai"))
+def audio_file_to_transcript(audio_file_path: str):
+    logging.info(f"Starting audio_file_to_transcript for {audio_file_path}")
 
 
 async def chunk_audio_files(
@@ -161,7 +167,7 @@ def url_fetch(url: str):
         # download_with_pytube(url, output_file)
         download_with_ydl(url, output_file)
 
-    process_video.remote(video_id, output_file)
+    return (video_id, output_file)
 
 
 def download_with_pytube(url: str, output_file: str):
@@ -192,8 +198,10 @@ def download_with_ydl(url: str, output_file: str):
 @stub.local_entrypoint()
 def main():
     logging.info("Starting main function")
-    print("what")
-    url_fetch.remote("https://www.youtube.com/watch?v=LPDnemFoqVk")
+    (video_id, file_path) = url_fetch.remote(
+        "https://www.youtube.com/watch?v=LPDnemFoqVk"
+    )
+    process_video.remote(video_id, file_path)
 
 
 ### Util functions
