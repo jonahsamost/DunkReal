@@ -58,17 +58,17 @@ def clean_segments(segments, offset):
 def rank_segment(transcript, top_n: int):
     transcript_str = json.dumps(transcript)
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-3.5-turbo-1106",
         messages=[
             {
                 "role": "system",
-                "content": "You are a video editor editing highlight reels for a basketball game. Your task is to rank the commentary snippets given to you based on how likely the snippet would contain a highlight play.\n\nA highlight play can be:\n- basket\n- score\n- dunk\n- steal\n- block\n\nthe more positive the commentary snippet seems like, the more likely the snippet contains a highlight play\n\nEach snippets are expressed as an object with the following format:\n{\n   start: the timestamp of the start of the snippet\n   end: the timestamp of the end of the snippet\n   text: the commentary snippet\n}\n\nWhen outputting, only output in json format of the array that contains the highlight snippets\n\nDo not include any prefix, file extension name, or anything that does not belong to the array"
+                "content": "You are a video editor editing highlight reels for a basketball game. Your task is to rank the commentary snippets given to you based on how likely the snippet would contain a highlight play.\n\nA highlight play can be:\n- basket\n- score\n- dunk\n- steal\n- block\n\nthe more positive the commentary snippet seems like, the more likely the snippet contains a highlight play\n\nEach snippets are expressed as an object with the following format:\n{\n   start: the timestamp of the start of the snippet\n   end: the timestamp of the end of the snippet\n   text: the commentary snippet\n}\n\nWhen outputting, only output in a json array that contains the highlight snippets with the key `highlights`"
             },
             {
                 "role": "user",
-                "content": f'Here are the snippets\n\n```\n{transcript_str}\n```\n\nOutput the top {top_n} as an array in json'
+                "content": f'Here are the snippets\n\n```\n{transcript_str}\n```\n\nFind the top {top_n} snippets'
             },
         ],
-        # response_format={ "type": "json_object" }
+        response_format={ "type": "json_object" }
     )
-    return response
+    return response.choices[0].message.content
