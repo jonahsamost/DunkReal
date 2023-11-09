@@ -53,7 +53,7 @@ def get_transcription(audioPath):
               file=audio_file,
               response_format="verbose_json"
           )
-        return(transcript.segments)
+        return transcript.segments
     
 def clean_segments(segments, offset):
     merged = []

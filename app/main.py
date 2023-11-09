@@ -29,15 +29,35 @@ def main():
 def video_pipeline(vid_url):
     
     (video_id, file_path) = url_fetch.remote(vid_url)
-    audio_file_paths = process_video.remote(video_id, file_path)
+    
     start_transcript_time = time.time()
     # get the whole transcript corpus
-    transcript = asyncio.run(process_transcription(audio_file_paths))
-    # with open(f'{config.CACHE_DIR}/full_transcript.json', 'w') as file:
-    #     json.dump(transcript, file)
+    # get cached transcript
+    transcript = []
+    ensure_dir(f'{config.CACHE_DIR}/transcript')
+    transcriptFileName = f'{config.CACHE_DIR}/transcript/{video_id}_transcript.json'
+    if pathlib.Path(transcriptFileName).exists():
+        logging.info(f"Cached full transcript found for video {video_id}")
+        with open(transcriptFileName, 'r') as file:
+            data = json.load(file)
+            transcript = data
+    
+    # if no cache
+    # generate audio_file_paths
+    # put that in the [video_id]_transcript.json
+    else: 
+        audio_file_paths = process_video.remote(video_id, file_path)
+        transcript = process_transcription(audio_file_paths)
+        logging.info("Transcription process completed")
+        try:
+            with open(transcriptFileName, 'w') as file:
+                json.dump(transcript, file)
+        except Exception as e:
+            logging.error(f"Error while writing to JSON file: {e}")
     # audio_file_to_transcript.remote(audio_file_paths[0])
-    logging.info(f"Transcript: {transcript}")
+    
     end_transcript_time = time.time()
+    logging.info(f'Sample segment: {transcript[10]}')
     logging.info(
         f"Time taken for turning audio files into transcripts: {end_transcript_time - start_transcript_time} seconds"
     )
@@ -85,35 +105,33 @@ def process_video(video_id: str, video_path: str):
 async def audio_file_to_transcript(audio_file_path: str):
     from . import rank
     import os
-    # fileName = audio_file_path.replace(".mp3", "-transcipt.json")
-    # if (pathlib.Path(fileName)):
-    #     with open(f'{audio_file_path.replace(".mp3", "-transcipt.json")}', 'r') as file:
-    #         data = json.load(file)
-    #     return data
+    start_transcript_time = time.time()
+    transcriptFileName = f'{audio_file_path.replace(".mp3", "").rsplit("/", 1)[0]}/transcript/{audio_file_path.replace(".mp3", "").rsplit("/", 1)[1]}.json'
+    if not pathlib.Path(transcriptFileName).parent.exists():
+        pathlib.Path(transcriptFileName).parent.mkdir(parents=True)
+    if pathlib.Path(transcriptFileName).exists():
+        logging.info(f"Cached transcript found for {audio_file_path}")
+        with open(transcriptFileName, 'r') as file:
+            data = json.load(file)
+        return data
     logging.info(f"Starting audio_file_to_transcript for {audio_file_path}")
     offset = int(os.path.basename(audio_file_path).split('_')[0])
     segments = rank.get_transcription(audio_file_path)
-    logging.info(f"Type of segments: {type(segments)}")
     clean_segments = rank.clean_segments(segments, offset)
-    logging.info(f"Type of clean_segments: {type(clean_segments)}")
-    logging.info(f"Type of clean_segments: {type(clean_segments)}")
-    logging.info(f"Transcription process completed: {clean_segments}")
-    # try:
-    #     with open(fileName, 'w') as file:
-    #         file.write(json.dumps(clean_segments))
-    # except TypeError as e:
-    #     logging.error(f"Error while writing to JSON file: {e}")
+    try:
+        with open(transcriptFileName, 'w') as file:
+            json.dump(clean_segments, file)
+    except Exception as e:
+        logging.error(f"Error while writing to JSON file: {e}")
+    end_transcript_time = time.time()
+    logging.info(f"Time taken for transcribing and cleaning {audio_file_path} into segments: {end_transcript_time - start_transcript_time}")
     return clean_segments
     
-async def process_transcription(audio_file_paths: List[str]):
+def process_transcription(audio_file_paths: List[str]):
     logging.info("Starting process_transcription function")
-    tasks = []
-    for audio_file_path in audio_file_paths:
-        task = asyncio.create_task(audio_file_to_transcript.remote(audio_file_path))
-        tasks.append(task)
-    transcripts = await asyncio.gather(*tasks)
-    logging.info("Transcription process completed")
-    return transcripts
+    results = list(audio_file_to_transcript.map(audio_file_paths))
+    # res = await asyncio.gather(*(audio_file_to_transcript.remote(audio_file_path) for audio_file_path in audio_file_paths))
+    return [segment for chunk in results for segment in chunk]
 
 
 
