@@ -67,9 +67,20 @@ def process_video(video_id: str, video_path: str):
     return file_paths
 
 
-@stub.function(secret=modal.Secret.from_name("openai"))
+@stub.function(
+    secret=modal.Secret.from_name("openai"),
+    image=Image.debian_slim().pip_install("openai"),
+    network_file_systems={config.CACHE_DIR: cache_volume},
+)
 def audio_file_to_transcript(audio_file_path: str):
+    from . import rank
+    import os
     logging.info(f"Starting audio_file_to_transcript for {audio_file_path}")
+    offset = int(os.path.basename(audio_file_path).split('_')[0])
+    segments = rank.get_transcription(audio_file_path)
+    clean_segments = rank.clean_segments(segments, offset)
+    logging.info(f"Transcription process completed: {clean_segments}")
+    
 
 
 async def video_to_audio(video_path, audio_folder, chunk_size=600):
