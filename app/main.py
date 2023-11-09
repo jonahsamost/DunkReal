@@ -1,13 +1,14 @@
 import asyncio
+import json
 import logging
+import os
 import pathlib
 import subprocess
 import time
-import json
+from typing import List
 
 import modal
 from modal import Image, Stub
-from typing import List
 
 from . import config
 
@@ -24,48 +25,57 @@ def main():
 
 
 @stub.function(
+    image=Image.debian_slim().pip_install("openai"),
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
-def video_pipeline(vid_url):
-    import random
+async def video_pipeline(vid_url):
     (video_id, file_path) = url_fetch.remote(vid_url)
-    
+
     start_transcript_time = time.time()
     # get the whole transcript corpus
     # get cached transcript
     transcript = []
-    ensure_dir(f'{config.CACHE_DIR}/transcript')
-    transcriptFileName = f'{config.CACHE_DIR}/transcript/{video_id}_transcript.json'
+    ensure_dir(f"{config.CACHE_DIR}/transcript")
+    transcriptFileName = f"{config.CACHE_DIR}/transcript/{video_id}_transcript.json"
     if pathlib.Path(transcriptFileName).exists():
         logging.info(f"Cached full transcript found for video {video_id}")
-        with open(transcriptFileName, 'r') as file:
+        with open(transcriptFileName, "r") as file:
             data = json.load(file)
             transcript = data
-    
+
     # if no cache
     # generate audio_file_paths
     # put that in the [video_id]_transcript.json
-    else: 
+    else:
         audio_file_paths = process_video.remote(video_id, file_path)
         transcript = process_transcription.remote(audio_file_paths)
         logging.info("Transcription process completed")
         try:
-            with open(transcriptFileName, 'w') as file:
+            with open(transcriptFileName, "w") as file:
                 json.dump(transcript, file)
         except Exception as e:
             logging.error(f"Error while writing to JSON file: {e}")
-    # audio_file_to_transcript.remote(audio_file_paths[0])
-    
+
     end_transcript_time = time.time()
-    logging.info(f'Sample segment: {transcript[10]}')
+    logging.info(f"Sample segment: {transcript[10]}")
     logging.info(
         f"Time taken for turning audio files into transcripts: {end_transcript_time - start_transcript_time} seconds"
     )
 
     # RANKING
-    top_snippets = rank_snippets.remote(transcript, 10)
-    logging.info(f"Top snippets: {top_snippets['highlights']}")
 
+    QUARTER_AMOUNT = 4
+    chunk_size = len(transcript) // QUARTER_AMOUNT
+    transcript_chunks = [
+        transcript[i : i + chunk_size] for i in range(0, len(transcript), chunk_size)
+    ]
+
+    tasks = (rank_snippets.remote(chunk) for chunk in transcript_chunks)
+
+    top_snippets = [
+        snippet for sublist in await asyncio.gather(tasks) for snippet in sublist
+    ]
+    logging.info(f"Top snippets: {top_snippets['highlights']}")
 
 
 ffmpeg_image = (
@@ -108,48 +118,75 @@ def process_video(video_id: str, video_path: str):
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
 async def audio_file_to_transcript(audio_file_path: str):
-    from . import rank 
     import os
+
+    from . import rank
+
     start_transcript_time = time.time()
     transcriptFileName = f'{audio_file_path.replace(".mp3", "").rsplit("/", 1)[0]}/transcript/{audio_file_path.replace(".mp3", "").rsplit("/", 1)[1]}.json'
     if not pathlib.Path(transcriptFileName).parent.exists():
         pathlib.Path(transcriptFileName).parent.mkdir(parents=True)
     if pathlib.Path(transcriptFileName).exists():
         logging.info(f"Cached transcript found for {audio_file_path}")
-        with open(transcriptFileName, 'r') as file:
+        with open(transcriptFileName, "r") as file:
             data = json.load(file)
         return data
     logging.info(f"Starting audio_file_to_transcript for {audio_file_path}")
-    offset = int(os.path.basename(audio_file_path).split('_')[0])
+    offset = int(os.path.basename(audio_file_path).split("_")[0])
     segments = rank.get_transcription(audio_file_path)
     clean_segments = rank.clean_segments(segments, offset)
     try:
-        with open(transcriptFileName, 'w') as file:
+        with open(transcriptFileName, "w") as file:
             json.dump(clean_segments, file)
     except Exception as e:
         logging.error(f"Error while writing to JSON file: {e}")
     end_transcript_time = time.time()
-    logging.info(f"Time taken for transcribing and cleaning {audio_file_path} into segments: {end_transcript_time - start_transcript_time}")
+    logging.info(
+        f"Time taken for transcribing and cleaning {audio_file_path} into segments: {end_transcript_time - start_transcript_time}"
+    )
     return clean_segments
-    
+
+
 def process_transcription(audio_file_paths: List[str]):
     logging.info("Starting process_transcription function")
     results = list(audio_file_to_transcript.map(audio_file_paths))
     # res = await asyncio.gather(*(audio_file_to_transcript.remote(audio_file_path) for audio_file_path in audio_file_paths))
     return [segment for chunk in results for segment in chunk]
 
+
 @stub.function(
     secret=modal.Secret.from_name("openai"),
     image=Image.debian_slim().pip_install("openai"),
+    network_file_systems={config.CACHE_DIR: cache_volume},
 )
-def rank_snippets(transcript, top_n):
+def rank_snippets(transcript, top_n=10):
+    import hashlib
+
     from . import rank
-    logging.info("Starting to rank snippets")
-    start_rank_time = time.time()
-    top_snippets = rank.rank_segment(transcript, top_n)
-    end_rank_time = time.time()
-    logging.info(f"Time taken for ranking segments: {end_rank_time - start_rank_time} seconds")
-    return json.loads(top_snippets)
+
+    # Hash the transcript
+    transcript_hash = hashlib.sha256(transcript.encode()).hexdigest()
+    cache_file_path = f"{config.SNIPPET_RANK_DIR}/{transcript_hash}"
+
+    # Check if there is a file with that name in the cache
+    if os.path.exists(cache_file_path):
+        # If yes, load and return that
+        with open(cache_file_path, "r") as file:
+            top_snippets = json.load(file)
+    else:
+        logging.info("Starting to rank snippets")
+        start_rank_time = time.time()
+        # Otherwise, actually call rank_segment
+        top_snippets = rank.rank_segment(transcript, top_n)
+        end_rank_time = time.time()
+        logging.info(
+            f"Time taken for ranking segments: {end_rank_time - start_rank_time} seconds"
+        )
+        # Save the result to the cache file
+        with open(cache_file_path, "w") as file:
+            json.dump(top_snippets, file)
+    return top_snippets
+
 
 async def video_to_audio(video_path, audio_folder, chunk_size=600):
     logging.info("Running ffmpeg command to extract audio")
