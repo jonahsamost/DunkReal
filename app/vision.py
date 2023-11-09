@@ -253,7 +253,9 @@ def mergeSnippetsToVideo(snips: List[Snippet], tempdir: str, ext: str = "mp4"):
         fd.write("\n".join(snip_vids))
     merged_path = os.path.join(tempdir, f"merged.{ext}")
     logging.info(f"Merging snippets into {merged_path}")
-    ffmpeg_cmd = f"ffmpeg -fflags +igndts  -reset_timestamps 1 -f concat -safe 0 -i {snip_file} -c copy {merged_path}"
+    ffmpeg_cmd = (
+        f"ffmpeg -fflags +igndts -f concat -safe 0 -i {snip_file} -c copy {merged_path}"
+    )
     output = runSubprocessCmd(ffmpeg_cmd)
     if output != 0:
         print(f"Error for cmd: {ffmpeg_cmd}")
@@ -270,21 +272,24 @@ def copyFinalVideoAndText(
     ext: str = "webm",
 ):
     outfile_video = os.path.join(output_dir, f"{output_video_name}.{ext}")
-    outfile_text = os.path.join(output_dir, f'{output_text_name}.json')
+    outfile_text = os.path.join(output_dir, f"{output_text_name}.json")
     cmd = f"mv {video_path} {outfile_video}"
     output = runSubprocessCmd(cmd)
     if output != 0:
         print(f"Error for cmd: {cmd}")
-        return False, None
+        return False, ("", "")
     # text = [s.gptv_text for s in snips if s.gptv_text]
     # text = "\n".join(text)
     text = []
     for s in snips:
-      text.append(
-        {'start': s.start,
-        'end': s.end,
-        'original': s.whisper_text,
-        'new': s.gptv_text})
+        text.append(
+            {
+                "start": s.start,
+                "end": s.end,
+                "original": s.whisper_text,
+                "new": s.gptv_text,
+            }
+        )
     with open(outfile_text, "w") as fd:
         json.dump(text, fd)
 
@@ -318,15 +323,15 @@ def runVision(input_data, input_path, output_dir):
         )
         snippets.append(snip)
 
-    # logging.info(f"Created {len(snippets)} snippets, turning into pngs")
-    # with multiprocessing.Pool() as pool:
-    #     results = pool.map(snippetsToPngsFn, snippets)
+    logging.info(f"Created {len(snippets)} snippets, turning into pngs")
+    with multiprocessing.Pool() as pool:
+        results = pool.map(snippetsToPngsFn, snippets)
 
-    # logging.info("Sending snippets to GPT")
-    # results = asyncio.run(snippetsToGPTFn(snippets))
-    # for (success, text), snip in zip(results, snippets):
-    #     if success:
-    #         snip.gptv_text = text
+    logging.info("Sending snippets to GPT")
+    results = asyncio.run(snippetsToGPTFn(snippets))
+    for (success, text), snip in zip(results, snippets):
+        if success:
+            snip.gptv_text = text
 
     tempdir = tempfile.TemporaryDirectory()
     logging.info("Merging snippets into a video")
