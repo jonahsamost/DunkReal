@@ -3,6 +3,7 @@ import base64
 import datetime
 import glob
 import json
+import logging
 import multiprocessing
 import os
 import random
@@ -202,7 +203,7 @@ def createVideoSnippet(
     fend = secondsToTimestamp(end)
     filename = f"snippet_{start}_{end}.{ext}"
     output_path = os.path.join(output_dir, filename)
-    ffmpeg_cmd = f"ffmpeg -ss {fstart} -to {fend} -i {input_path} -c copy {output_path}"
+    ffmpeg_cmd = f"ffmpeg -ss {fstart} -to {fend} -i {input_path} {output_path}"
     output = runSubprocessCmd(ffmpeg_cmd)
     if output != 0:
         print(f"Error for cmd: {ffmpeg_cmd}")
@@ -244,13 +245,14 @@ async def snippetsToGPTFn(snips: List[Snippet]):
     return await asyncio.gather(*tasks)
 
 
-def mergeSnippetsToVideo(snips: List[Snippet], tempdir: str, ext: str = "webm"):
+def mergeSnippetsToVideo(snips: List[Snippet], tempdir: str, ext: str = "mp4"):
     snip_vids = [f"file '{s.snippet_path}'" for s in snips]
     snip_file = os.path.join(tempdir, "snip_file.txt")
     with open(snip_file, "w") as fd:
         fd.write("\n".join(snip_vids))
     merged_path = os.path.join(tempdir, f"merged.{ext}")
-    ffmpeg_cmd = f"ffmpeg -f concat -safe 0 -i {snip_file} -c copy {merged_path}"
+    logging.info(f"Merging snippets into {merged_path}")
+    ffmpeg_cmd = f"ffmpeg -fflags +igndts  -reset_timestamps 1 -f concat -safe 0 -i {snip_file} -c copy {merged_path}"
     output = runSubprocessCmd(ffmpeg_cmd)
     if output != 0:
         print(f"Error for cmd: {ffmpeg_cmd}")
@@ -306,15 +308,18 @@ def runVision(input_data, input_path, output_dir):
         )
         snippets.append(snip)
 
-    with multiprocessing.Pool() as pool:
-        results = pool.map(snippetsToPngsFn, snippets)
+    # logging.info(f"Created {len(snippets)} snippets, turning into pngs")
+    # with multiprocessing.Pool() as pool:
+    #     results = pool.map(snippetsToPngsFn, snippets)
 
-    results = asyncio.run(snippetsToGPTFn(snippets))
-    for (success, text), snip in zip(results, snippets):
-        if success:
-            snip.gptv_text = text
+    # logging.info("Sending snippets to GPT")
+    # results = asyncio.run(snippetsToGPTFn(snippets))
+    # for (success, text), snip in zip(results, snippets):
+    #     if success:
+    #         snip.gptv_text = text
 
     tempdir = tempfile.TemporaryDirectory()
+    logging.info("Merging snippets into a video")
     success, merged_path = mergeSnippetsToVideo(snippets, tempdir.name, ext=video_ext)
 
     for s in snippets:
@@ -323,7 +328,12 @@ def runVision(input_data, input_path, output_dir):
     output_video_name = "reel"
     output_text_name = "summary"
     success, (vid_name, txt_name) = copyFinalVideoAndText(
-        merged_path, snippets, output_dir, output_video_name, output_text_name
+        merged_path,
+        snippets,
+        output_dir,
+        output_video_name,
+        output_text_name,
+        ext=video_ext,
     )
     if success:
         return (vid_name, txt_name)
