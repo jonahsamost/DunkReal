@@ -81,6 +81,7 @@ class Snippet:
     tempdir: tempfile.TemporaryDirectory
     snippet_path: str
     start: int
+    end: int
     whisper_text: str
     gptv_text: str = ""
 
@@ -269,16 +270,24 @@ def copyFinalVideoAndText(
     ext: str = "webm",
 ):
     outfile_video = os.path.join(output_dir, f"{output_video_name}.{ext}")
-    outfile_text = os.path.join(output_dir, output_text_name)
+    outfile_text = os.path.join(output_dir, f'{output_text_name}.json')
     cmd = f"mv {video_path} {outfile_video}"
     output = runSubprocessCmd(cmd)
     if output != 0:
         print(f"Error for cmd: {cmd}")
         return False, None
-    text = [s.gptv_text for s in snips if s.gptv_text]
-    text = "\n".join(text)
+    # text = [s.gptv_text for s in snips if s.gptv_text]
+    # text = "\n".join(text)
+    text = []
+    for s in snips:
+      text.append(
+        {'start': s.start,
+        'end': s.end,
+        'original': s.whisper_text,
+        'new': s.gptv_text})
     with open(outfile_text, "w") as fd:
-        fd.write(text)
+        json.dump(text, fd)
+
     return True, (outfile_video, outfile_text)
 
 
@@ -304,6 +313,7 @@ def runVision(input_data, input_path, output_dir):
             tempdir=tempdir,
             snippet_path=snippet_path,
             start=f["start"],
+            end=f["end"],
             whisper_text=f["text"],
         )
         snippets.append(snip)
@@ -335,6 +345,7 @@ def runVision(input_data, input_path, output_dir):
         output_text_name,
         ext=video_ext,
     )
+
     if success:
         return (vid_name, txt_name)
     return ("", "")
