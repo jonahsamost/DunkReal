@@ -29,7 +29,7 @@ def main():
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
 async def video_pipeline(vid_url):
-    (video_id, file_path) = url_fetch.remote(vid_url)
+    (video_id, video_path) = url_fetch.remote(vid_url)
 
     start_transcript_time = time.time()
     # get the whole transcript corpus
@@ -47,7 +47,7 @@ async def video_pipeline(vid_url):
     # generate audio_file_paths
     # put that in the [video_id]_transcript.json
     else:
-        audio_file_paths = process_video.remote(video_id, file_path)
+        audio_file_paths = process_video.remote(video_id, video_path)
         transcript = process_transcription.remote(audio_file_paths)
         logging.info("Transcription process completed")
         try:
@@ -76,6 +76,20 @@ async def video_pipeline(vid_url):
         snippet for sublist in await asyncio.gather(tasks) for snippet in sublist
     ]
     logging.info(f"Top snippets: {top_snippets['highlights']}")
+    vid_name, txt_name = create_highlight_video(
+      top_snippets['highlights'], video_path, config.OUTPUT_DIR)
+    logging.info(f'Video path: {vid_name}')
+    logging.info(f'GPT4-Vision text output: {txt_name}')
+
+
+@stub.function(
+    image= Image.debian_slim().apt_install("ffmpeg").pip_install('requests'),
+    network_file_systems={config.CACHE_DIR: cache_volume},
+    timeout=6000,
+)
+def create_highlight_video(highlight_times, video_path, output_dir):
+  from . import vision
+  return vision.runVision(highlight_times, video_path, output_dir)
 
 
 ffmpeg_image = (
