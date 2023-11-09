@@ -36,7 +36,7 @@ async def video_pipeline(vid_url):
     # get cached transcript
     transcript = []
     ensure_dir(f"{config.CACHE_DIR}/transcript")
-    transcriptFileName = f"{config.CACHE_DIR}/transcript/{video_id}_transcript.json"
+    transcriptFileName = f"{config.CACHE_DIR}/transcript/{video_id}-transcript.json"
     if pathlib.Path(transcriptFileName).exists():
         logging.info(f"Cached full transcript found for video {video_id}")
         with open(transcriptFileName, "r") as file:
@@ -48,7 +48,7 @@ async def video_pipeline(vid_url):
     # put that in the [video_id]_transcript.json
     else:
         audio_file_paths = process_video.remote(video_id, video_path)
-        transcript = process_transcription.remote(audio_file_paths)
+        transcript = await process_transcription(audio_file_paths)
         logging.info("Transcription process completed")
         try:
             with open(transcriptFileName, "w") as file:
@@ -70,26 +70,32 @@ async def video_pipeline(vid_url):
         transcript[i : i + chunk_size] for i in range(0, len(transcript), chunk_size)
     ]
 
-    tasks = (rank_snippets.remote(chunk) for chunk in transcript_chunks)
+    tasks = [rank_snippets.remote.aio(chunk) for chunk in transcript_chunks]
 
-    top_snippets = [
-        snippet for sublist in await asyncio.gather(tasks) for snippet in sublist
-    ]
-    logging.info(f"Top snippets: {top_snippets['highlights']}")
-    vid_name, txt_name = create_highlight_video(
-      top_snippets['highlights'], video_path, config.OUTPUT_DIR)
-    logging.info(f'Video path: {vid_name}')
-    logging.info(f'GPT4-Vision text output: {txt_name}')
+    gathered_tasks = await asyncio.gather(*tasks)
+    top_snippets = []
+    for sublist in gathered_tasks:
+        print(sublist)
+        print(type(sublist))
+        for snippet in sublist["highlights"]:
+            top_snippets.append(snippet)
+    logging.info(f"Top snippets: {top_snippets}")
+    vid_name, txt_name = create_highlight_video.remote(
+        top_snippets, video_path, config.OUTPUT_DIR
+    )
+    logging.info(f"Video path: {vid_name}")
+    logging.info(f"GPT4-Vision text output: {txt_name}")
 
 
 @stub.function(
-    image= Image.debian_slim().apt_install("ffmpeg").pip_install('requests'),
+    image=Image.debian_slim().apt_install("ffmpeg").pip_install("requests"),
     network_file_systems={config.CACHE_DIR: cache_volume},
     timeout=6000,
 )
 def create_highlight_video(highlight_times, video_path, output_dir):
-  from . import vision
-  return vision.runVision(highlight_times, video_path, output_dir)
+    from . import vision
+
+    return vision.runVision(highlight_times, video_path, output_dir)
 
 
 ffmpeg_image = (
@@ -128,7 +134,7 @@ def process_video(video_id: str, video_path: str):
 
 @stub.function(
     secret=modal.Secret.from_name("openai"),
-    image=Image.debian_slim().pip_install("openai"),
+    image=Image.debian_slim(python_version="3.8").pip_install("openai"),
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
 async def audio_file_to_transcript(audio_file_path: str):
@@ -138,8 +144,7 @@ async def audio_file_to_transcript(audio_file_path: str):
 
     start_transcript_time = time.time()
     transcriptFileName = f'{audio_file_path.replace(".mp3", "").rsplit("/", 1)[0]}/transcript/{audio_file_path.replace(".mp3", "").rsplit("/", 1)[1]}.json'
-    if not pathlib.Path(transcriptFileName).parent.exists():
-        pathlib.Path(transcriptFileName).parent.mkdir(parents=True)
+    ensure_dir(pathlib.Path(transcriptFileName).parent)
     if pathlib.Path(transcriptFileName).exists():
         logging.info(f"Cached transcript found for {audio_file_path}")
         with open(transcriptFileName, "r") as file:
@@ -161,25 +166,26 @@ async def audio_file_to_transcript(audio_file_path: str):
     return clean_segments
 
 
-def process_transcription(audio_file_paths: List[str]):
+async def process_transcription(audio_file_paths: List[str]):
     logging.info("Starting process_transcription function")
-    results = list(audio_file_to_transcript.map(audio_file_paths))
-    # res = await asyncio.gather(*(audio_file_to_transcript.remote(audio_file_path) for audio_file_path in audio_file_paths))
-    return [segment for chunk in results for segment in chunk]
+    results = [audio_file_to_transcript.remote.aio(path) for path in audio_file_paths]
+    res = await asyncio.gather(*results)
+    return [segment for chunk in res for segment in chunk]
 
 
 @stub.function(
     secret=modal.Secret.from_name("openai"),
-    image=Image.debian_slim().pip_install("openai"),
+    image=Image.debian_slim(python_version="3.8").pip_install("openai"),
     network_file_systems={config.CACHE_DIR: cache_volume},
 )
-def rank_snippets(transcript, top_n=10):
+def rank_snippets(transcripts, top_n=10):
     import hashlib
 
     from . import rank
 
     # Hash the transcript
-    transcript_hash = hashlib.sha256(transcript.encode()).hexdigest()
+    transcript_hash = hashlib.sha256(json.dumps(transcripts).encode()).hexdigest()
+    ensure_dir(config.SNIPPET_RANK_DIR)
     cache_file_path = f"{config.SNIPPET_RANK_DIR}/{transcript_hash}"
 
     # Check if there is a file with that name in the cache
@@ -187,11 +193,12 @@ def rank_snippets(transcript, top_n=10):
         # If yes, load and return that
         with open(cache_file_path, "r") as file:
             top_snippets = json.load(file)
+        logging.info(f"Found cached snippets, {top_snippets} {type(top_snippets)}")
     else:
         logging.info("Starting to rank snippets")
         start_rank_time = time.time()
         # Otherwise, actually call rank_segment
-        top_snippets = rank.rank_segment(transcript, top_n)
+        top_snippets = rank.rank_segment(transcripts, top_n)
         end_rank_time = time.time()
         logging.info(
             f"Time taken for ranking segments: {end_rank_time - start_rank_time} seconds"
