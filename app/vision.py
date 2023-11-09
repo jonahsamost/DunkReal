@@ -273,7 +273,7 @@ def copyFinalVideoAndText(
     if output != 0:
         print(f"Error for cmd: {cmd}")
         return False, None
-    text = [s.gptv_text for s in snips]
+    text = [s.gptv_text for s in snips if s.gptv_text]
     text = "\n".join(text)
     with open(outfile_text, "w") as fd:
         fd.write(text)
