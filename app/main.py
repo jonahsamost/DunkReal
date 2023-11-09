@@ -75,11 +75,24 @@ async def video_pipeline(vid_url):
     gathered_tasks = await asyncio.gather(*tasks)
     top_snippets = []
     for sublist in gathered_tasks:
-        print(sublist)
-        print(type(sublist))
         for snippet in sublist["highlights"]:
             top_snippets.append(snippet)
-    logging.info(f"Top snippets: {top_snippets}")
+    logging.info(f"Top snippets: {len(top_snippets)}")
+    for snippet in top_snippets:
+        duration = snippet["end"] - snippet["start"]
+        logging.info(f"{snippet['start']} - {snippet['end']} ({duration}s)")
+
+    import random
+
+    if len(top_snippets) > 10:
+        logging.info(
+            f"More than 10 snippets found: {len(top_snippets)}. Selecting 10 as per instructions."
+        )
+        first_snippet = top_snippets[0]
+        last_two_snippets = top_snippets[-2:]
+        random_snippets = random.sample(top_snippets[1:-2], 7)
+        top_snippets = [first_snippet] + random_snippets + last_two_snippets
+    top_snippets = sorted(top_snippets, key=lambda x: x["start"])
     vid_name, txt_name = create_highlight_video.remote(
         top_snippets, video_path, config.OUTPUT_DIR
     )
@@ -91,10 +104,14 @@ async def video_pipeline(vid_url):
     image=Image.debian_slim().apt_install("ffmpeg").pip_install("requests"),
     network_file_systems={config.CACHE_DIR: cache_volume},
     timeout=6000,
+    secret=modal.Secret.from_name("openai"),
+    cpu=8.0,
+    memory=32000,
 )
 def create_highlight_video(highlight_times, video_path, output_dir):
     from . import vision
 
+    ensure_dir(output_dir)
     return vision.runVision(highlight_times, video_path, output_dir)
 
 
@@ -193,7 +210,6 @@ def rank_snippets(transcripts, top_n=10):
         # If yes, load and return that
         with open(cache_file_path, "r") as file:
             top_snippets = json.load(file)
-        logging.info(f"Found cached snippets, {top_snippets} {type(top_snippets)}")
     else:
         logging.info("Starting to rank snippets")
         start_rank_time = time.time()
