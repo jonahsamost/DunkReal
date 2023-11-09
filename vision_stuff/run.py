@@ -21,10 +21,12 @@ Only talk about the specific play. Do not talk about the overall context.
 Do not hallucinate anything. Be very concise. Limit to 70 words. Do not give any introduction.
 '''
 
+good_data = [{'start': 5228, 'end': 5239, 'text': "Green back to Curry.  Curry sets leans in.  He's got a shot clock at seven.  He's got a shot clock at seven.  He's got a shot clock at seven.  Knocked away get it back from"}, {'start': 5238, 'end': 5249, 'text': 'Curry shot clock at seven.  Baseball on the drive kicks it  out.  Pull for three.  James the rebound with thirty'}, {'start': 5248, 'end': 5261, 'text': "two seconds remaining.  There's about a 10 second  different shot clock and game  clock they don't have to foul.  LeBron James I'm putting my head"}, {'start': 5260, 'end': 5273, 'text': "down and attacking.  I'm going to foul.  I'm not letting him shoot a  three.  They have a timeout left but  won't call it here.  Curse trying to call it.  And finally he gets it.  Steve Kerr came to half court."}, {'start': 5273, 'end': 5284, 'text': "The officials couldn't see him  or clearly couldn't hear him.  And he gets the timeout with two  point one remaining.  We'll see if the officials look  to see to perhaps put more time"}, {'start': 5283, 'end': 5295, 'text': 'on the clock.  The Lakers are up three.  James the rebound with thirty  two seconds remaining.  They got a great look the last'}, {'start': 5294, 'end': 5306, 'text': 'time by Jordan Poole in the  corner of a nice pass by  Basemore.  LeBron James with the three  pointer had to throw it up the'}, {'start': 5305, 'end': 5317, 'text': "shot clock was expiring.  It's a big time shot.  Awful execution.  Realizes that the clock went"}, {'start': 5316, 'end': 5329, 'text': "down the good chase down by  Curry and.  LeBron.  Elevates.  Knocks down the biggest shot of  the night.  That's a 30 footer.  And you see Curry.  Who's had that look on."}, {'start': 5329, 'end': 5340, 'text': 'Opponents faces after he knocks  down threes the same look as  LeBron James with a clutch shot.'}]
+
 
 @dataclass
 class Snippet:
-  tempdir: str
+  tempdir: tempfile.TemporaryDirectory
   snippet_path: str
   start: int
   whisper_text: str
@@ -34,20 +36,38 @@ class Snippet:
 def generateFakeSamples():
   snips = [x for x in range(10, 3600, 50)]
   snips = random.sample(snips, 10)
-  snips = sorted(snips)
   out = []
   for s in snips:
     cur = {'start': s, 'end': s + 10, 'text': f'the current start time is: {s}'}
     out.append(cur)
   return out
 
+
+def useRealData():
+  return good_data
+
+
+def sortedDataByStart(data):
+  return sorted(data, key=lambda x: x['start'])
+
+
+def checkData():
+  data = sortedDataByStart(good_data)
+  for d in data:
+    s = d['start']
+    e = d['end']
+    print(f'start: {s}, time: {e - s}')
+
+
 def getOpenAIKey():
   with open('.OPENAI_KEY.key', 'r') as fd:
     return fd.read().strip()
 
+
 def encode_image(image_path):
   with open(image_path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode('utf-8')
+
 
 def imagePathsToGPT4(image_paths):
   """Given list of image paths return GPT4Vision output using them."""
@@ -156,7 +176,6 @@ def snippetsToPngsFn(snip: Snippet):
 
 
 async def snippetsToGPTFn(snips: List[Snippet]):
-  # success, gpt_output = imagesToGPT(tempdir.name)
   tasks = [imagesToGPT(s.tempdir.name) for s in snips]
   return await asyncio.gather(*tasks)
 
@@ -175,31 +194,61 @@ def mergeSnippetsToVideo(snips: List[Snippet], tempdir: str, ext: str = 'webm'):
   return True, merged_path
 
 
-fake = generateFakeSamples()
-input_path = '/home/lodi/mindsdb/warriors_game/warriors_game.webm'
-snippets = []
-for f in fake:
+def copyFinalVideoAndText(video_path: str, snips: List[Snippet],
+                          output_dir: str, output_video_name: str,
+                          output_text_name: str,
+                          ext: str = 'webm'):
+  outfile_video = os.path.join(output_dir, f'{output_video_name}.{ext}')
+  outfile_text = os.path.join(output_dir, output_text_name)
+  cmd = f'mv {video_path} {outfile_video}'
+  output = runSubprocessCmd(cmd)
+  if output != 0:
+    print(f'Error for cmd: {cmd}')
+    return False
+  text = [s.gptv_text for s in snips]
+  text = '\n'.join(text)
+  with open(output_text_name, 'w') as fd:
+    fd.write(text)
+  return True
+
+
+if __name__ == '__main__':
+  # fake = generateFakeSamples()
+  fake = useRealData()
+  input_path = '/home/lodi/mindsdb/warriors_game/warriors_game.webm'
+
+  fake = sortedDataByStart(fake)
+  snippets = []
+  for f in fake:
+    tempdir = tempfile.TemporaryDirectory()
+    success, snippet_path = createVideoSnippet(f['start'], f['end'], input_path, tempdir.name)
+    if not success:
+      print('createVideoSnippet returned False!!!! FUCKKKKKK')
+      raise ValueError("FUCKKKK")
+    snip = Snippet(
+      tempdir=tempdir,
+      snippet_path=snippet_path,
+      start=f['start'],
+      whisper_text=f['text'])
+    snippets.append(snip)
+
+  with multiprocessing.Pool() as pool:
+    results = pool.map(snippetsToPngsFn, snippets)
+
+  # results = asyncio.run(snippetsToGPTFn(snippets))
+  # for (sucess, text), snip in zip(results, snippets):
+  #   if success:
+  #     snip.gptv_text = text
+
   tempdir = tempfile.TemporaryDirectory()
-  success, snippet_path = createVideoSnippet(f['start'], f['end'], input_path, tempdir.name)
-  if not success:
-    print('createVideoSnippet returned False!!!! FUCKKKKKK')
-    raise ValueError("FUCKKKK")
-  snip = Snippet(
-    tempdir=tempdir,
-    snippet_path=snippet_path,
-    start=f['start'],
-    whisper_text=f['text'])
-  snippets.append(snip)
+  success, merged_path = mergeSnippetsToVideo(snippets, tempdir.name)
 
-with multiprocessing.Pool() as pool:
-  results = pool.map(snippetsToPngsFn, snippets)
+  for s in snippets:
+    s.tempdir.cleanup()
 
-results = asyncio.run(snippetsToGPTFn(snippets))
-for (sucess, text), snip in zip(results, snippets):
-  if success:
-    snip.gptv_text = text
-
-tempdir = tempfile.TemporaryDirectory()
-success, merged_path = mergeSnippetsToVideo(snippets, tempdir.name)
-
-
+  output_dir = '/home/lodi/mindsdb/output'
+  output_video_name = 'reel'
+  output_text_name = 'summary'
+  copyFinalVideoAndText(merged_path, snippets, output_dir, 
+    output_video_name, output_text_name)
+  print('output_dir: ', output_dir)
