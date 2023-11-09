@@ -47,8 +47,21 @@ def useRealData():
   return good_data
 
 
-def sortedDataByStart(data):
-  return sorted(data, key=lambda x: x['start'])
+def sortedDataByStart(data, enforce_no_overlap: bool = True):
+  sdata = sorted(data, key=lambda x: x['start'])
+  if not enforce_no_overlap:
+    return sdata
+  new_data = []
+  new_data.append(sdata[0])
+
+  for check in sdata[1:]:
+    cur = new_data[-1]
+    if cur['end'] >= check['start']:
+      cur['end'] = check['end']
+      cur['text'] += '. ' + check['text']
+    else:
+      new_data.append(check)
+  return new_data
 
 
 def checkData():
