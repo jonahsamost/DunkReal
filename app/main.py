@@ -33,16 +33,21 @@ def process_video(video_id: str, video_path: str):
         return
 
     ensure_dir(config.RAW_AUDIO_DIR)
-    raw_audio_path = f"{config.RAW_AUDIO_DIR}/{video_id}.mp3"
+    raw_audio_dir = f"{config.RAW_AUDIO_DIR}/{video_id}"
+    ensure_dir(raw_audio_dir)
 
-    if not pathlib.Path(raw_audio_path).exists():
-        asyncio.run(video_to_audio(video_path, raw_audio_path))
+    # asyncio.run(video_to_audio(video_path, raw_audio_dir))
 
-    audio_video_folder = f"{config.CHUNKED_AUDIO_DIR}/{video_id}"
+    audio_folder = f"{config.CHUNKED_AUDIO_DIR}/{video_id}"
+    ensure_dir(audio_folder)
 
-    file_paths = asyncio.run(
-        chunk_audio_files(raw_audio_path, audio_video_folder, config.AUDIO_CHUNK_SIZE)
-    )
+    # file_paths = asyncio.run(
+    #     chunk_audio_files(raw_audio_path, audio_video_folder, config.AUDIO_CHUNK_SIZE)
+    # )
+
+    logging.info("Processing video and generating transcript")
+
+    file_paths = asyncio.run(video_to_audio(video_path, audio_folder), debug=True)
 
     logging.info(f"Chunked all the audio files: {file_paths}")
 
@@ -68,20 +73,18 @@ async def chunk_audio_files(
             continue
         logging.info("Running ffmpeg command to split audio")
         task = asyncio.create_task(
-            asyncio.subprocess.call(
-                [
-                    "ffmpeg",
-                    "-i",
-                    raw_audio_path,
-                    "-ss",
-                    str(start),
-                    "-to",
-                    str(end),
-                    "-vn",
-                    "-acodec",
-                    "copy",
-                    output_path,
-                ]
+            run_command(
+                "ffmpeg",
+                "-i",
+                raw_audio_path,
+                "-ss",
+                str(start),
+                "-to",
+                str(end),
+                "-vn",
+                "-acodec",
+                "copy",
+                output_path,
             )
         )
         tasks.append(task)
@@ -105,38 +108,38 @@ def get_audio_duration(raw_audio_path: str):
     )
 
 
-async def video_to_audio(video_path, raw_audio_path, chunk_size=600):
+async def video_to_audio(video_path, audio_folder, chunk_size=600):
     logging.info("Running ffmpeg command to extract audio")
     duration = get_audio_duration(video_path)
     duration = int(float(duration))
     tasks = []
+    file_paths = []
     for i in range(0, duration, chunk_size):
         start = i
         end = i + chunk_size
-        output_path = f"{raw_audio_path}/{start}_{end}.mp3"
+        output_path = f"{audio_folder}/{start}_{end}.mp3"
+        file_paths.append(output_path)
         if pathlib.Path(output_path).exists():
             continue
-        logging.info("Running ffmpeg command to split audio")
         task = asyncio.create_task(
-            asyncio.subprocess.call(
-                [
-                    "ffmpeg",
-                    "-i",
-                    video_path,
-                    "-ss",
-                    str(start),
-                    "-to",
-                    str(end),
-                    "-vn",
-                    "-acodec",
-                    "copy",
-                    output_path,
-                ]
+            run_command(
+                "ffmpeg",
+                "-i",
+                video_path,
+                "-ss",
+                str(start),
+                "-to",
+                str(end),
+                "-vn",
+                "-acodec",
+                "libmp3lame",
+                output_path,
             )
         )
         tasks.append(task)
     await asyncio.gather(*tasks)
     logging.info("Finished extracting audio with ffmpeg")
+    return file_paths
 
 
 @stub.function(
@@ -193,7 +196,25 @@ def main():
     url_fetch.remote("https://www.youtube.com/watch?v=LPDnemFoqVk")
 
 
+### Util functions
+
+
 def ensure_dir(path: str):
     from pathlib import Path
 
     Path(path).mkdir(parents=True, exist_ok=True)
+
+
+async def run_command(*args):
+    process = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        raise Exception(
+            f"Command exited with status {process.returncode}, stderr: {stderr.decode()}"
+        )
+
+    return stdout.decode()
