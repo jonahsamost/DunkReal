@@ -8,7 +8,7 @@ from modal import Image, Stub
 
 from . import config
 
-cache_volume = modal.NetworkFileSystem.persisted("dunk-reel-cache")
+cache_volume = modal.NetworkFileSystem.persisted(config.NFS_NAME)
 logging.basicConfig(level=logging.INFO)
 
 stub = Stub("youtube-url-to-vid-and-transcript")

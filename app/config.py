@@ -1,6 +1,7 @@
 import pathlib
 
 CACHE_DIR = "/cache"
+NFS_NAME = "dunk-reel-cache"
 # Where downloaded podcasts are stored, by guid hash.
 # Mostly .mp3 files 50-100MiB.
 RAW_AUDIO_DIR = pathlib.Path(CACHE_DIR, "raw_audio")
