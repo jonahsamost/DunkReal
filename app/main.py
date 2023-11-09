@@ -11,8 +11,28 @@ from . import config
 
 cache_volume = modal.NetworkFileSystem.persisted(config.NFS_NAME)
 logging.basicConfig(level=logging.INFO)
-
 stub = Stub("youtube-url-to-vid-and-transcript")
+
+
+@stub.local_entrypoint()
+def main():
+    logging.info("Starting main function")
+    vid_url = "https://www.youtube.com/watch?v=LPDnemFoqVk"
+    video_pipeline.remote(vid_url)
+
+
+@stub.function()
+def video_pipeline(vid_url):
+    (video_id, file_path) = url_fetch.remote(vid_url)
+    audio_file_paths = process_video.remote(video_id, file_path)
+    start_transcript_time = time.time()
+    audio_file_to_transcript.remote(audio_file_paths[0])
+    end_transcript_time = time.time()
+    logging.info(
+        f"Time taken for turning audio files into transcripts: {end_transcript_time - start_transcript_time} seconds"
+    )
+
+
 ffmpeg_image = (
     Image.debian_slim()
     .apt_install("git")
@@ -36,7 +56,7 @@ def process_video(video_id: str, video_path: str):
     audio_folder = f"{config.CHUNKED_AUDIO_DIR}/{video_id}"
     ensure_dir(audio_folder)
 
-    logging.info("Processing video and generating transcript")
+    logging.info("Processing video into audio chunks")
 
     start_time = time.time()
     file_paths = asyncio.run(video_to_audio(video_path, audio_folder), debug=True)
@@ -44,74 +64,12 @@ def process_video(video_id: str, video_path: str):
     logging.info(f"Time taken for video_to_audio: {end_time - start_time} seconds")
 
     logging.info(f"Chunked all the audio files: {file_paths}")
-    start_transcript_time = time.time()
-    audio_file_to_transcript.remote(file_paths[0])
-    end_transcript_time = time.time()
-    logging.info(
-        f"Time taken for audio_file_to_transcript: {end_transcript_time - start_transcript_time} seconds"
-    )
+    return file_paths
 
 
 @stub.function(secret=modal.Secret.from_name("openai"))
 def audio_file_to_transcript(audio_file_path: str):
     logging.info(f"Starting audio_file_to_transcript for {audio_file_path}")
-
-
-async def chunk_audio_files(
-    raw_audio_path: str, audio_video_folder: str, chunk_size: int
-):
-    ensure_dir(audio_video_folder)
-
-    logging.info(f"Chunking {raw_audio_path} into individual audio files")
-
-    duration = get_audio_duration(raw_audio_path)
-    duration = int(float(duration)) + 1
-    logging.info(f"Chunking {raw_audio_path} of duration: {duration}s")
-    tasks = []
-    file_paths = []
-    for i in range(0, duration, chunk_size):
-        start = i
-        end = i + chunk_size
-        output_path = f"{audio_video_folder}/{start}_{end}.mp3"
-        file_paths.append(output_path)
-        if pathlib.Path(output_path).exists():
-            continue
-        logging.info("Running ffmpeg command to split audio")
-        task = asyncio.create_task(
-            run_command(
-                "ffmpeg",
-                "-i",
-                raw_audio_path,
-                "-ss",
-                str(start),
-                "-to",
-                str(end),
-                "-vn",
-                "-acodec",
-                "copy",
-                output_path,
-            )
-        )
-        tasks.append(task)
-    await asyncio.gather(*tasks)
-    return file_paths
-
-
-
-def get_audio_duration(raw_audio_path: str):
-    return subprocess.check_output(
-        [
-            "ffprobe",
-            "-i",
-            raw_audio_path,
-            "-show_entries",
-            "format=duration",
-            "-v",
-            "quiet",
-            "-of",
-            "csv=p=0",
-        ]
-    )
 
 
 async def video_to_audio(video_path, audio_folder, chunk_size=600):
@@ -170,6 +128,9 @@ def url_fetch(url: str):
     return (video_id, output_file)
 
 
+### Higher level utils
+
+
 def download_with_pytube(url: str, output_file: str):
     from pytube import YouTube
 
@@ -195,16 +156,23 @@ def download_with_ydl(url: str, output_file: str):
         logging.info(f"Downloaded {url} in {end_time - start_time} seconds")
 
 
-@stub.local_entrypoint()
-def main():
-    logging.info("Starting main function")
-    (video_id, file_path) = url_fetch.remote(
-        "https://www.youtube.com/watch?v=LPDnemFoqVk"
+def get_audio_duration(raw_audio_path: str):
+    return subprocess.check_output(
+        [
+            "ffprobe",
+            "-i",
+            raw_audio_path,
+            "-show_entries",
+            "format=duration",
+            "-v",
+            "quiet",
+            "-of",
+            "csv=p=0",
+        ]
     )
-    process_video.remote(video_id, file_path)
 
 
-### Util functions
+### Basic python utils
 
 
 def ensure_dir(path: str):
