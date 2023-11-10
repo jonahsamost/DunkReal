@@ -13,10 +13,14 @@ export function YoutubeGrid({ urls }: { urls: string[] }) {
           <ReactPlayer
             url={url}
             playing={true}
+            loop={true}
             width="356"
             height="200"
           />
-          <Checkbox className="absolute top-0 right-0 m-2 group-hover:block bg-black rounded-sm" />
+          <Checkbox
+            className="absolute top-0 right-0 m-2 group-hover:block bg-black rounded-sm"
+            defaultChecked
+          />
         </div>
       ))}
     </div>

@@ -1,12 +1,17 @@
-import React, { Dispatch, SetStateAction } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import React from "react";
 
-export default function YoutubeLink({ loading, handleClick }: { loading: boolean, handleClick: React.MouseEventHandler<HTMLButtonElement>}) {
-
+export default function YoutubeLink({
+  loading,
+  handleClick,
+}: {
+  loading: boolean;
+  handleClick: React.MouseEventHandler<HTMLButtonElement>;
+}) {
   return (
     <div className="w-[600px] flex flex-col gap-2 items-center justify-center">
-      <Input />
+      <Input defaultValue="https://www.youtube.com/watch?v=LPDnemFoqVk" />
       <Button
         variant="secondary"
         className="flex flex-row gap-2"

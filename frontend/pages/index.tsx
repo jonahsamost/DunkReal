@@ -1,24 +1,23 @@
-import Image from "next/image";
-import { Inter } from "next/font/google";
-import YoutubeLink from "@/components/YoutubeLink";
-import { YoutubeGrid } from "@/components/youtube-grid";
-import { useState } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { YoutubeGrid } from "@/components/youtube-grid";
 import logo from "@/public/logo.svg";
+import { Inter } from "next/font/google";
+import Image from "next/image";
+import { useState } from "react";
 import ReactPlayer from "react-player";
 
 const inter = Inter({ subsets: ["latin"] });
 
 const urls = [
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
-  "https://www.youtube.com/watch?v=e4QLHWLNt9U",
+  "https://youtu.be/0cwwEI0lbXA",
+  "https://youtu.be/ssRJHlz47oU",
+  "https://youtu.be/xiJFvm4eehs",
+  "https://youtu.be/vkMA356zj4Y",
+  "https://youtu.be/2Xbl9Wmkwws",
+  "https://youtu.be/GxS5dokuf5Y",
+  "https://youtu.be/0cwwEI0lbXA",
+  "https://youtu.be/xiJFvm4eehs",
 ];
 
 export default function Home() {
@@ -51,7 +50,7 @@ export default function Home() {
     >
       <Image src={logo} alt="logo" width={300} height={120} />
       <div className="w-[600px] flex flex-col gap-4 items-center justify-center">
-        <Input />
+        <Input defaultValue="https://www.youtube.com/watch?v=LPDnemFoqVk" />
         {snippetsUrl.length === 0 && (
           <Button
             variant="secondary"
