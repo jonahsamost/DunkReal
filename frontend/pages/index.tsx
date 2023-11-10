@@ -124,7 +124,15 @@ export default function Home() {
         </Button>
       )}
       {reelUrl && (
-        <ReactPlayer url={reelUrl} playing={true} width="900" height="507" />
+        <ReactPlayer
+          url={reelUrl}
+          controls
+          playing
+          loop
+          muted
+          width="900"
+          height="507"
+        />
       )}
       {reelUrl && (
         <Button

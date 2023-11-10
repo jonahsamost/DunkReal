@@ -12,8 +12,10 @@ export function YoutubeGrid({ urls }: { urls: string[] }) {
         <div className="relative group" key={index}>
           <ReactPlayer
             url={url}
-            playing={true}
-            loop={true}
+            controls
+            playing
+            loop
+            muted
             width="356"
             height="200"
           />
