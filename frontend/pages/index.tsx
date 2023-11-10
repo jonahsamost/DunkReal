@@ -144,7 +144,7 @@ export default function Home() {
             setReelUrl("");
           }}
         >
-          Do again
+          Do another one
         </Button>
       )}
     </main>
