@@ -46,10 +46,10 @@ export default function Home() {
 
   return (
     <main
-      className={`flex min-h-screen flex-col items-center gap-6 p-8 ${inter.className} bg-[#0E121B]`}
+      className={`flex min-h-screen flex-col items-center gap-6 p-8 ${inter.className} bg-[#0E121B] items-center justify-center`}
     >
       <Image src={logo} alt="logo" width={300} height={120} />
-      <div className="w-[600px] flex flex-col gap-4 items-center justify-center">
+      <div className="w-[600px] flex flex-col gap-8 items-center justify-center">
         <Input defaultValue="https://www.youtube.com/watch?v=LPDnemFoqVk" />
         {snippetsUrl.length === 0 && (
           <Button
